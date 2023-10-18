@@ -50,20 +50,24 @@ class CocoDataset(Dataset):
     def __len__(self):
         return len(self.ids)
 
-def collate_fn(batch):
+
+def __collate_fn(batch):
     images, targets = zip(*batch)
     images = torch.stack([torch.from_numpy(image.transpose((2, 0, 1))) for image in images])
     return images, targets
 
 
-# Путь к корневой папке датасета COCO
-data_root = "..."
-
-# Путь к файлу с аннотациями
-annotation_file = "..."
-
-# Создание экземпляра датасета COCO
-dataset = CocoDataset(data_root, annotation_file)
-
 # Создание экземпляра DataLoader
-dataloader = DataLoader(dataset, batch_size=32, shuffle=True, collate_fn=collate_fn)
+def dataloader(data_root: str, annotation_file: str, batch_size: int = 32, shuffle: bool = True,
+               fn: object = __collate_fn):
+    """
+
+    :param data_root: Путь к папке с изображениями
+    :param annotation_file: Путь к файлу с аннотациями
+    :param batch_size: Размер батча
+    :param shuffle: Перемешивание
+    :param fn: Предобработчик коллекции
+    :return: Возвращает загрусчик данных для обучения и валидации
+    """
+    return DataLoader(CocoDataset(data_root, annotation_file), batch_size=batch_size, shuffle=shuffle,
+                      collate_fn=fn)
