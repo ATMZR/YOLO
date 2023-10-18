@@ -1,83 +1,67 @@
-import torch
 import torch.nn as nn
-
-
-class YOLOLoss(nn.Module):
-    def __init__(self, num_classes, anchors):
-        super(YOLOLoss, self).__init__()
+class YOLOv3Loss(nn.Module):
+    def __init__(self, num_classes, anchors, lambda_coord, lambda_noobj):
+        super(YOLOv3Loss, self).__init__()
         self.num_classes = num_classes
         self.num_anchors = len(anchors)
-
-        self.mse_loss = nn.MSELoss(reduction='sum')
-        self.bce_loss = nn.BCELoss(reduction='sum')
-
-        self.lambda_coord = 5
-        self.lambda_noobj = 0.5
-
-        self.anchors = anchors
+        self.lambda_coord = lambda_coord
+        self.lambda_noobj = lambda_noobj
 
     def forward(self, output, target):
-        mask, not_mask = target[..., 4:5], 1 - target[..., 4:5]
+        # Расчет loss для ограничивающих рамок
+        loss_coord = self.__calculate_coord_loss(output, target, self.lambda_coord)
 
-        pred_boxes = output[..., :4].sigmoid()
-        target_boxes = target[..., :4]
+        # Расчет loss для уверенности модели
+        loss_conf = self.__calculate_confidence_loss(output, target, self.lambda_noobj)
 
-        pred_conf = output[..., 4].sigmoid()
-        target_conf = target[..., 4]
+        # Расчет loss для классификации объектов
+        loss_class = self.__calculate_class_loss(output, target)
 
-        pred_cls = output[..., 5:].sigmoid()
-        target_cls = target[..., 5:]
+        # Общий loss
+        total_loss = loss_coord + loss_conf + loss_class
 
-        loss_box = self.mse_loss(mask * pred_boxes, mask * target_boxes)
-        loss_conf_obj = self.bce_loss(mask * pred_conf, mask * target_conf)
-        loss_conf_noobj = self.bce_loss(not_mask * pred_conf, not_mask * target_conf)
-        loss_cls = self.bce_loss(mask * pred_cls, mask * target_cls)
+        return total_loss
 
-        iou_anchors = self._calculate_iou(pred_boxes, target_boxes)
-        mask_iou = iou_anchors > 0.5
+    @staticmethod
+    def __calculate_coord_loss(output, target, lambda_coord):
+        mask = target[:, 4:5]
+        not_mask = 1 - mask
 
-        loss_xy = self.mse_loss(mask * mask_iou.float() * pred_boxes[..., :2],
-                                mask * mask_iou.float() * target_boxes[..., :2])
-        loss_wh = self.mse_loss(mask * mask_iou.float() * pred_boxes[..., 2:],
-                                mask * mask_iou.float() * target_boxes[..., 2:])
+        pred_boxes = output[:, :4].sigmoid()
+        target_boxes = target[:, :4]
 
-        loss = (self.lambda_coord * (
-                    loss_xy + loss_wh) + loss_conf_obj + self.lambda_noobj * loss_conf_noobj + loss_cls)
+        loss_x = nn.MSELoss()(mask * pred_boxes[:, 0], mask * target_boxes[:, 0])
+        loss_y = nn.MSELoss()(mask * pred_boxes[:, 1], mask * target_boxes[:, 1])
+        loss_w = nn.MSELoss()(mask * pred_boxes[:, 2], mask * target_boxes[:, 2])
+        loss_h = nn.MSELoss()(mask * pred_boxes[:, 3], mask * target_boxes[:, 3])
 
-        return loss
+        loss_coord = lambda_coord * (loss_x + loss_y + loss_w + loss_h)
 
-    def _calculate_iou(self, boxes1, boxes2):
-        b1_center_x = boxes1[..., 0]
-        b1_center_y = boxes1[..., 1]
-        b1_width = boxes1[..., 2]
-        b1_height = boxes1[..., 3]
+        return loss_coord
 
-        b2_center_x = boxes2[..., 0]
-        b2_center_y = boxes2[..., 1]
-        b2_width = boxes2[..., 2]
-        b2_height = boxes2[..., 3]
+    @staticmethod
+    def __calculate_confidence_loss(output, target, lambda_noobj):
+        mask = target[:, 4:5]
+        not_mask = 1 - mask
 
-        b1_x1 = b1_center_x - b1_width / 2
-        b1_y1 = b1_center_y - b1_height / 2
-        b1_x2 = b1_center_x + b1_width / 2
-        b1_y2 = b1_center_y + b1_height / 2
+        pred_conf = output[:, 4].sigmoid()
+        target_conf = target[:, 4]
 
-        b2_x1 = b2_center_x - b2_width / 2
-        b2_y1 = b2_center_y - b2_height / 2
-        b2_x2 = b2_center_x + b2_width / 2
-        b2_y2 = b2_center_y + b2_height / 2
+        loss_obj = nn.BCELoss()(mask * pred_conf, mask * target_conf)
+        loss_noobj = nn.BCELoss()(not_mask * pred_conf, not_mask * target_conf)
 
-        intersect_x1 = torch.maximum(b1_x1, b2_x1)
-        intersect_y1 = torch.maximum(b1_y1, b2_y1)
-        intersect_x2 = torch.minimum(b1_x2, b2_x2)
-        intersect_y2 = torch.minimum(b1_y2, b2_y2)
+        loss_conf = loss_obj + lambda_noobj * loss_noobj
 
-        intersect_area = torch.clamp(intersect_x2 - intersect_x1 + 1, min=0) * torch.clamp(
-            intersect_y2 - intersect_y1 + 1, min=0)
+        return loss_conf
 
-        b1_area = b1_width * b1_height
-        b2_area = b2_width * b2_height
+    @staticmethod
+    def __calculate_class_loss(output, target):
+        mask = target[:, 4:5]
+        not_mask = 1 - mask
 
-        iou = intersect_area / (b1_area + b2_area - intersect_area + 1e-16)
+        pred_cls = output[:, 5:].sigmoid()
+        target_cls = target[:, 5:]
 
-        return iou
+        loss_cls = nn.BCELoss()(mask * pred_cls, mask * target_cls)
+
+        return loss_cls

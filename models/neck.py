@@ -40,4 +40,4 @@ class FPN(nn.Module):
 
         mid_level = self.merge1(mid_level)
         low_level = self.merge2(low_level)
-        return [low_level, mid_level, high_level]
+        return low_level, mid_level, high_level

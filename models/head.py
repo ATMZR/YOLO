@@ -16,9 +16,10 @@ class Head(nn.Module):
         )
 
     def forward(self, inputs):
+
         low_level, mid_level, high_level = inputs
         low_level = self.sequent(low_level)
         mid_level = self.sequent(mid_level)
         high_level = self.sequent(high_level)
 
-        return [low_level, mid_level, high_level]
+        return low_level, mid_level, high_level

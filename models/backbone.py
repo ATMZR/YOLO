@@ -68,4 +68,4 @@ class Darknet53(nn.Module):
         mid_level = self.residual_block4(x)
         x = self.conv6(mid_level)
         high_level = self.residual_block5(x)
-        return [low_level, mid_level, high_level]
+        return low_level, mid_level, high_level
