@@ -17,14 +17,34 @@ class CocoDataset(Dataset):
         ann_ids = coco.getAnnIds(imgIds=img_id)
         anns = coco.loadAnns(ann_ids)
         target = {}
-        target["boxes"] = [ann["bbox"] for ann in anns]
-        target["labels"] = [ann["category_id"] for ann in anns]
+
         image_path = coco.loadImgs(img_id)[0]["file_name"]
         image = cv2.imread(os.path.join(self.root, image_path))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        image = cv2.resize(image, dsize=(608, 608), interpolation=cv2.INTER_AREA)
-        image = image / 255.0
+        target["boxes"] = [ann["bbox"] for ann in anns]
+        target["labels"] = [ann["category_id"] for ann in anns]
 
+        return self.__transform(image, target)
+
+    @staticmethod
+    def __transform(image, target, scale=608):
+        scaled_boxes = []
+        for box in target["boxes"]:
+            x, y, w, h = box
+            # Разделение координат на ширину и высоту исходного изображения
+            x /= image.shape[1]
+            y /= image.shape[0]
+            w /= image.shape[1]
+            h /= image.shape[0]
+            # Умножение на новую ширину и высоту
+            x *= scale
+            y *= scale
+            w *= scale
+            h *= scale
+            scaled_boxes.append([round(diget, 3) for diget in [x, y, w, h]])
+        target["boxes"] = scaled_boxes
+        image = cv2.resize(image, dsize=(scale, scale), interpolation=cv2.INTER_AREA)
+        image = image / 255.0
         return image, target
 
     def __len__(self):
